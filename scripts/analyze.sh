@@ -8,9 +8,10 @@ source "${SCRIPT_DIR}/../config.env"
 
 DECOMPILE_DIR="${1:-}"
 APK_FILE="${2:-}"
+MODE="${3:-full}"   # full | quick (quick = secrets only; URLs via decompile)
 
 if [ -z "$DECOMPILE_DIR" ]; then
-    echo "Usage: $(basename "$0") <decompile_output_dir> [apk_file]"
+    echo "Usage: $(basename "$0") <decompile_output_dir> [apk_file] [full|quick]"
     exit 1
 fi
 
@@ -26,8 +27,70 @@ echo "╔═══════════════════════�
 echo "║         APK ANALYSIS PIPELINE                    ║"
 echo "╚══════════════════════════════════════════════════╝"
 
+# ── Secrets scan (used by full & quick modes) ──────────
+scan_secrets() {
+    echo ""
+    echo "━━━ Secrets & API keys ━━━━━━━━━━━━━━━━━━━━━━━━━"
+    SEARCH_DIRS=()
+    [ -d "${DECOMPILE_DIR}/jadx_sources" ] && SEARCH_DIRS+=("${DECOMPILE_DIR}/jadx_sources")
+    [ -d "${DECOMPILE_DIR}/apktool_smali" ] && SEARCH_DIRS+=("${DECOMPILE_DIR}/apktool_smali")
+
+    {
+        echo "=== POTENTIAL SECRETS ==="
+
+        echo ""
+        echo "--- API Keys ---"
+        grep -rniE '(api[_-]?key|apikey|secret[_-]?key|auth[_-]?token|access[_-]?token|client[_-]?secret)\s*[=:]\s*["\x27][A-Za-z0-9+/=_-]{16,}["\x27]' "${SEARCH_DIRS[@]}" 2>/dev/null | head -100
+
+        echo ""
+        echo "--- AWS Keys ---"
+        grep -rniE '(AKIA[0-9A-Z]{16}|aws[_-]?secret[_-]?access[_-]?key)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
+        echo ""
+        echo "--- Google API Keys ---"
+        grep -rniE '(AIza[0-9A-Za-z_-]{35})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
+        echo ""
+        echo "--- Firebase ---"
+        grep -rniE '(firebaseio\.com|firebase\.google\.com|googleapis\.com.*firebase)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
+        echo ""
+        echo "--- Hardcoded Passwords ---"
+        grep -rniE '(password|passwd|pwd)\s*[=:]\s*["\x27][^"\x27]{4,}["\x27]' "${SEARCH_DIRS[@]}" 2>/dev/null | head -50
+
+        echo ""
+        echo "--- Private Keys ---"
+        grep -rniE '(BEGIN (RSA |DSA |EC )?PRIVATE KEY)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
+
+        echo ""
+        echo "--- JWT Tokens ---"
+        grep -rniE '(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
+
+        echo ""
+        echo "--- Hardcoded IPs ---"
+        grep -rnoE '\b((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\b' "${SEARCH_DIRS[@]}" 2>/dev/null \
+            | grep -vE '(0\.0\.0\.0|127\.0\.0|10\.|172\.(1[6-9]|2|3[01])\.|192\.168\.|255\.)' | sort -u | head -50
+    } > "${ANALYSIS_DIR}/secrets.txt" 2>&1
+
+    echo "[+] Secrets scan saved"
+}
+
 # Analysis greps return exit 1 on "no match" — expected, not fatal.
 set +e
+
+# ── Quick mode: URLs (decompile) + secrets only ────────
+if [ "$MODE" = "quick" ]; then
+    scan_secrets
+    set -e
+    echo ""
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  QUICK SCAN COMPLETE (URLs + Secrets)            ║"
+    echo "╠══════════════════════════════════════════════════╣"
+    echo "║  URLs:    ${DECOMPILE_DIR}/urls/"
+    echo "║  Secrets: ${ANALYSIS_DIR}/secrets.txt"
+    echo "╚══════════════════════════════════════════════════╝"
+    exit 0
+fi
 
 # ── 1. YARA rules scan ────────────────────────────────
 echo ""
@@ -79,56 +142,7 @@ echo "[+] Permissions analysis saved"
 # ── 3. Hardcoded secrets & API keys ───────────────────
 echo ""
 echo "━━━ [3/8] Secrets & API keys ━━━━━━━━━━━━━━━━━━━━━"
-SEARCH_DIRS=()
-[ -d "${DECOMPILE_DIR}/jadx_sources" ] && SEARCH_DIRS+=("${DECOMPILE_DIR}/jadx_sources")
-[ -d "${DECOMPILE_DIR}/apktool_smali" ] && SEARCH_DIRS+=("${DECOMPILE_DIR}/apktool_smali")
-
-{
-    echo "=== POTENTIAL SECRETS ==="
-
-    # API key patterns
-    echo ""
-    echo "--- API Keys ---"
-    grep -rniE '(api[_-]?key|apikey|secret[_-]?key|auth[_-]?token|access[_-]?token|client[_-]?secret)\s*[=:]\s*["\x27][A-Za-z0-9+/=_-]{16,}["\x27]' "${SEARCH_DIRS[@]}" 2>/dev/null | head -100
-
-    # AWS keys
-    echo ""
-    echo "--- AWS Keys ---"
-    grep -rniE '(AKIA[0-9A-Z]{16}|aws[_-]?secret[_-]?access[_-]?key)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
-
-    # Google API keys
-    echo ""
-    echo "--- Google API Keys ---"
-    grep -rniE '(AIza[0-9A-Za-z_-]{35})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
-
-    # Firebase
-    echo ""
-    echo "--- Firebase ---"
-    grep -rniE '(firebaseio\.com|firebase\.google\.com|googleapis\.com.*firebase)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
-
-    # Hardcoded passwords
-    echo ""
-    echo "--- Hardcoded Passwords ---"
-    grep -rniE '(password|passwd|pwd)\s*[=:]\s*["\x27][^"\x27]{4,}["\x27]' "${SEARCH_DIRS[@]}" 2>/dev/null | head -50
-
-    # Private keys
-    echo ""
-    echo "--- Private Keys ---"
-    grep -rniE '(BEGIN (RSA |DSA |EC )?PRIVATE KEY)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
-
-    # JWT tokens
-    echo ""
-    echo "--- JWT Tokens ---"
-    grep -rniE '(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
-
-    # Hardcoded IPs
-    echo ""
-    echo "--- Hardcoded IPs ---"
-    grep -rnoE '\b((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\b' "${SEARCH_DIRS[@]}" 2>/dev/null \
-        | grep -vE '(0\.0\.0\.0|127\.0\.0|10\.|172\.(1[6-9]|2|3[01])\.|192\.168\.|255\.)' | sort -u | head -50
-} > "${ANALYSIS_DIR}/secrets.txt" 2>&1
-
-echo "[+] Secrets scan saved"
+scan_secrets
 
 # ── 4. Crypto detection ───────────────────────────────
 echo ""

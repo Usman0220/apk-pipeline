@@ -193,9 +193,18 @@ analyze_apk_tui() {
 
     # What to run
     local stages
-    stages=$(echo -e "full\ndecompil\nanalyze\nreport" | fzf --height=10 --reverse --border --prompt="Stage> " || echo "full")
+    stages=$(echo -e "quick (URLs + secrets)\nfull\ndecompile\nanalyze\nreport" | fzf --height=12 --reverse --border --prompt="Stage> " || echo "full")
 
     case "$stages" in
+        "quick"*)
+            msg "Running quick scan (URLs + secrets)..."
+            bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
+            local decompile_dir="${OUTPUT_BASE}/${apk_name}/decompile"
+            bash "${SCRIPT_DIR}/scripts/analyze.sh" "$decompile_dir" "$chosen" quick 2>&1 | while IFS= read -r line; do echo "  $line"; done
+            LAST_DECOMPILE_DIR="$decompile_dir"
+            ok "URLs:    ${decompile_dir}/urls/"
+            ok "Secrets: ${decompile_dir}/analysis/secrets.txt"
+            ;;
         "full")
             msg "Running full pipeline..."
             bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done

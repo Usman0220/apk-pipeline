@@ -59,6 +59,7 @@ APK Input
 | `decompile` | Decompile APK with all engines |
 | `analyze` | Run deep static analysis on decompiled output |
 | `report` | Generate markdown report |
+| `quick` | Fast scan — URLs + secrets only (skips full analysis) |
 | `full` | Run all stages (decompile + analyze + report) |
 | `batch` | Process multiple APKs from directory or list |
 | `check` | Show tool availability status |

@@ -33,6 +33,7 @@ Commands:
   decompile   Decompile APK with all engines
   analyze     Run deep static analysis
   report      Generate markdown report
+  quick       Quick scan: URLs + secrets only (decompile + secrets)
   full        Run full pipeline (decompile + analyze + report)
   batch       Process multiple APKs
   check       Check tool availability
@@ -126,6 +127,21 @@ case "$COMMAND" in
         ;;
     report)
         bash "${SCRIPT_DIR}/scripts/report.sh" "$@"
+        ;;
+    quick)
+        APK_FILE="${1:-}"
+        OUTPUT_DIR="${2:-}"
+        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") quick <apk_file> [output_dir]"; exit 1; }
+        echo ""
+        echo "Quick scan (URLs + secrets) on: $APK_FILE"
+        echo ""
+        bash "${SCRIPT_DIR}/scripts/decompile.sh" "$APK_FILE" "$OUTPUT_DIR"
+        DECOMPILE_OUT="${OUTPUT_DIR:-${OUTPUT_BASE}/$(basename "$APK_FILE" .apk)/decompile}"
+        bash "${SCRIPT_DIR}/scripts/analyze.sh" "$DECOMPILE_OUT" "$APK_FILE" quick
+        echo ""
+        echo "[+] Quick scan complete"
+        echo "    URLs:    ${DECOMPILE_OUT}/urls/"
+        echo "    Secrets: ${DECOMPILE_OUT}/analysis/secrets.txt"
         ;;
     full)
         APK_FILE="${1:-}"
