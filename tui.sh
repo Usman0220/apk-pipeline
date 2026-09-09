@@ -503,7 +503,7 @@ delete_output() {
 
     local chosen
     chosen=$(echo -e "$targets\nBack" | fzf --multi --height=50% --reverse --border \
-        --header="TAB=select  ENTER=continue" --prompt="Delete> " \
+        --header="TAB=select  CTRL-A=select all  ENTER=continue  (multi-delete enabled)" --prompt="Delete> " \
         --preview='if [ -d {} ]; then echo "Total size:"; du -sh {} 2>/dev/null; echo ""; find {} -maxdepth 1 | head -20; else echo "File: {}"; fi')
 
     if [ -z "$chosen" ] || [ "$chosen" = "Back" ]; then
@@ -513,12 +513,22 @@ delete_output() {
     header
     echo -e "${BOLD}  Confirm delete${RESET}"
     echo ""
+    local _total
+    _total=0
     echo "$chosen" | while IFS= read -r item; do
         printf '  %s\n' "$item"
     done
+    _total=$(echo "$chosen" | grep -cv '^$' || true)
+    echo ""
+    if command -v du >/dev/null 2>&1; then
+        local _size
+        _size=$(echo "$chosen" | tr '\n' '\0' | du -sch --files0-from=- 2>/dev/null | tail -1 | cut -f1)
+        [ -n "$_size" ] && echo -e "  ${DIM}Total size to free: ${_size} (${_total} item(s))${RESET}"
+    fi
     echo ""
     local ans
-    read -rp "  Delete these ${RED}(y/N)${RESET}? " ans
+    echo -e -n "  Delete these ${RED}(y/N)${RESET}? "
+    read -r ans
     case "${ans,,}" in
         y|yes)
             local _deleted=0
