@@ -444,7 +444,7 @@ batch_tui() {
                 local _path="${line%=*}" _pkg="${line##*=}"
                 local _name="$(basename "$_path" .apk)"
                 if $ADB pull "$_path" "${input}/${_pkg}_${_name}.apk" >/dev/null 2>&1; then
-                    ((_pulled++))
+                    ((_pulled++)) || true
                 fi
             done < <($ADB shell pm list packages -f -3 2>/dev/null | tr -d '\r' | sort)
             info "Pulled $_pulled APKs to $input"
@@ -460,7 +460,7 @@ batch_tui() {
                 local _path="${line%=*}" _pkg="${line##*=}"
                 local _name="$(basename "$_path" .apk)"
                 if $ADB pull "$_path" "${input}/${_pkg}_${_name}.apk" >/dev/null 2>&1; then
-                    ((_pulled++))
+                    ((_pulled++)) || true
                 fi
             done < <($ADB shell pm list packages -f 2>/dev/null | tr -d '\r' | sort)
             info "Pulled $_pulled APKs to $input"
@@ -536,7 +536,7 @@ delete_output() {
                 [ -z "$item" ] && continue
                 if rm -rf "$item" 2>/dev/null; then
                     info "Deleted $item"
-                    ((_deleted++))
+                    ((_deleted++)) || true
                 else
                     err "Failed to delete $item"
                 fi
