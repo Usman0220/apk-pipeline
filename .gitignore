@@ -1,0 +1,14 @@
+# Pipeline output (pulled APKs, decompiled sources, reports)
+output/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local test artifacts
+/tmp/
