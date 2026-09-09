@@ -106,16 +106,16 @@ pkg_browser() {
         pkg_name="${line##*=}"
         [ -z "$pkg_name" ] && pkg_name="$(basename "$pkg_path" .apk)"
         SELECTED_PKGS+=("${pkg_path}|${pkg_name}")
-    done < <(echo "$packages" | fzf --multi --height=70% --reverse --border \
+    done < <(echo -e "$packages\nBack" | fzf --multi --height=70% --reverse --border \
         --exact \
         --delimiter='=' --nth=-1 --with-nth=-1 \
-        --header="TAB=select  CTRL-A=select all  ENTER=confirm  (search by package name)" \
+        --header="TAB=select  CTRL-A=select all  ENTER=confirm  Back=ESC or select Back  (search by package name)" \
         --prompt="Packages> " \
         --preview-window=right:50% \
-        --preview="echo 'Path: {}'; echo '---'; pkg=\$(echo {} | sed 's/.*=//'); echo \"Package: \$pkg\"; echo '---'; adb shell dumpsys package \$pkg 2>/dev/null | head -40")
+        --preview="echo 'Path: {}'; echo '---'; pkg=\$(echo {} | sed 's/.*=//'); [ \"\$pkg\" = 'Back' ] && exit 0; echo \"Package: \$pkg\"; echo '---'; adb shell dumpsys package \$pkg 2>/dev/null | head -40" | grep -v '^Back$' || true)
 
     if [ ${#SELECTED_PKGS[@]} -eq 0 ]; then
-        warn "No packages selected"
+        return
     else
         msg "${#SELECTED_PKGS[@]} package(s) selected"
     fi
@@ -177,10 +177,10 @@ analyze_apk_tui() {
     fi
 
     local chosen
-    chosen=$(echo "$apk_list" | fzf --height=40% --reverse --border --prompt="APK> " \
-        --preview="file {} && echo '---' && sha256sum {} && echo '---' && du -h {}")
+    chosen=$(echo -e "$apk_list\n Back to main menu" | fzf --height=40% --reverse --border --prompt="APK> " \
+        --preview="file '{}' 2>/dev/null && echo '---' && sha256sum '{}' 2>/dev/null && echo '---' && du -h '{}' 2>/dev/null")
 
-    if [ -z "$chosen" ]; then
+    if [ -z "$chosen" ] || [ "$chosen" = "Back to main menu" ]; then
         return
     fi
 
@@ -193,9 +193,10 @@ analyze_apk_tui() {
 
     # What to run
     local stages
-    stages=$(echo -e "quick (URLs + secrets)\nfull\ndecompile\nanalyze\nreport" | fzf --height=12 --reverse --border --prompt="Stage> " || echo "full")
+    stages=$(echo -e "quick (URLs + secrets)\nfull\ndecompile\nanalyze\nreport\n Back" | fzf --height=13 --reverse --border --prompt="Stage> " || echo "Back")
 
     case "$stages" in
+        "Back"|"") return ;;
         "quick"*)
             msg "Running quick scan (URLs + secrets)..."
             bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
@@ -264,10 +265,10 @@ url_browser() {
     fi
 
     local chosen_file
-    chosen_file=$(echo "$url_dirs" | fzf --height=40% --reverse --border --prompt="URL file> " \
-        --preview="head -50 {}")
+    chosen_file=$(echo -e "$url_dirs\n Back" | fzf --height=40% --reverse --border --prompt="URL file> " \
+        --preview="head -50 '{}' 2>/dev/null")
 
-    if [ -z "$chosen_file" ]; then
+    if [ -z "$chosen_file" ] || [ "$chosen_file" = "Back" ]; then
         return
     fi
 
@@ -360,10 +361,10 @@ analysis_browser() {
     fi
 
     local chosen_dir
-    chosen_dir=$(echo "$decompile_dirs" | fzf --height=40% --reverse --border --prompt="App> " \
-        --preview="ls {}/ 2>/dev/null")
+    chosen_dir=$(echo -e "$decompile_dirs\nBack" | fzf --height=40% --reverse --border --prompt="App> " \
+        --preview="ls '{}' 2>/dev/null")
 
-    if [ -z "$chosen_dir" ]; then
+    if [ -z "$chosen_dir" ] || [ "$chosen_dir" = "Back" ]; then
         return
     fi
 
@@ -420,13 +421,16 @@ batch_tui() {
     local input
     echo -e "  Source:"
     local source_type
-    source_type=$(echo -e "Directory of APKs\nDevice (all third-party)\nDevice (all)" | fzf --height=10 --reverse --border --prompt="Source> ")
+    source_type=$(echo -e "Directory of APKs\nDevice (all third-party)\nDevice (all)\nBack" | fzf --height=12 --reverse --border --prompt="Source> ")
 
     case "$source_type" in
+        "Back"|"") return ;;
         "Directory"*)
             input=$(find / -maxdepth 4 -name "*.apk" -type f 2>/dev/null | head -50 | fzf --height=40% --reverse --border --prompt="Directory> " \
-                --preview="ls {}/ 2>/dev/null || file {}")
-            [ -z "$input" ] && return
+                --preview="ls '{}' 2>/dev/null || file '{}'")
+            if [ -z "$input" ]; then
+                return
+            fi
             input=$(dirname "$input")
             ;;
         "Device (all third-party)")
@@ -468,7 +472,8 @@ batch_tui() {
     fi
 
     local workers
-    workers=$(echo -e "1\n2\n4\n8" | fzf --height=8 --reverse --border --prompt="Workers> " || echo "2")
+    workers=$(echo -e "1\n2\n4\n8\nBack" | fzf --height=9 --reverse --border --prompt="Workers> " || echo "Back")
+    [ "$workers" = "Back" ] && return
 
     header
     msg "Starting batch with $workers workers..."
@@ -497,11 +502,13 @@ delete_output() {
     fi
 
     local chosen
-    chosen=$(echo "$targets" | fzf --multi --height=50% --reverse --border \
+    chosen=$(echo -e "$targets\nBack" | fzf --multi --height=50% --reverse --border \
         --header="TAB=select  ENTER=continue" --prompt="Delete> " \
         --preview='if [ -d {} ]; then echo "Total size:"; du -sh {} 2>/dev/null; echo ""; find {} -maxdepth 1 | head -20; else echo "File: {}"; fi')
 
-    [ -z "$chosen" ] && return
+    if [ -z "$chosen" ] || [ "$chosen" = "Back" ]; then
+        return
+    fi
 
     header
     echo -e "${BOLD}  Confirm delete${RESET}"
