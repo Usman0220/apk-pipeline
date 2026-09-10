@@ -6,6 +6,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../config.env"
 
+# Cache configuration (shared with apk-pipeline.sh)
+CACHE_DIR="$WORKSPACE/.cache"
+HASH_FILE="$CACHE_DIR/apk_hashes.txt"
+mkdir -p "$CACHE_DIR"
+touch "$HASH_FILE"
+
 INPUT="${1:-}"
 CONCURRENCY="${2:-1}"
 RESULTS_DIR="${OUTPUT_BASE}/batch_results"
@@ -79,20 +85,46 @@ for apk in "${APK_LIST[@]}"; do
     apk_name="$(basename "$apk" .apk)"
     echo "[$COUNT/$TOTAL] Processing: $apk_name"
 
-    # Decompile
-    if bash "${SCRIPT_DIR}/decompile.sh" "$apk" "${RESULTS_DIR}/${apk_name}" >> "$LOG_FILE" 2>&1; then
-        # Analyze
-        if bash "${SCRIPT_DIR}/analyze.sh" "${RESULTS_DIR}/${apk_name}/decompile" "$apk" >> "$LOG_FILE" 2>&1; then
-            # Report
-            bash "${SCRIPT_DIR}/report.sh" "${RESULTS_DIR}/${apk_name}/decompile" "$apk" >> "$LOG_FILE" 2>&1 || true
-            echo "  [+] OK - ${RESULTS_DIR}/${apk_name}/decompile/REPORT.md"
-            ((++PASS))
+    # Check cache first
+    decompile_out="${RESULTS_DIR}/${apk_name}/decompile"
+    if [ -f "$HASH_FILE" ] && grep -q "^$apk|" "$HASH_FILE" 2>/dev/null; then
+        stored_hash=$(grep "^$apk|" "$HASH_FILE" | cut -d'|' -f2)
+        current_hash=$(sha256sum "$apk" | awk '{print $1}')
+        if [ "$current_hash" = "$stored_hash" ] && [ -d "$decompile_out" ] && [ -f "$decompile_out/report.txt" ]; then
+            echo "  [~] Cache hit - skipping decompile"
         else
-            echo "  [-] Analysis failed (see log)"
-            ((++FAIL))
+            # Decompile
+            if bash "${SCRIPT_DIR}/decompile.sh" "$apk" "${RESULTS_DIR}/${apk_name}" >> "$LOG_FILE" 2>&1; then
+                # Update cache
+                echo "$apk|$current_hash" >> "$HASH_FILE"
+            else
+                echo "  [-] Decompile failed (see log)"
+                ((++FAIL))
+                continue
+            fi
         fi
     else
-        echo "  [-] Decompile failed (see log)"
+        # Decompile
+        if bash "${SCRIPT_DIR}/decompile.sh" "$apk" "${RESULTS_DIR}/${apk_name}" >> "$LOG_FILE" 2>&1; then
+            # Add to cache
+            mkdir -p "$CACHE_DIR"
+            current_hash=$(sha256sum "$apk" | awk '{print $1}')
+            echo "$apk|$current_hash" >> "$HASH_FILE"
+        else
+            echo "  [-] Decompile failed (see log)"
+            ((++FAIL))
+            continue
+        fi
+    fi
+    
+    # Analyze
+    if bash "${SCRIPT_DIR}/analyze.sh" "${RESULTS_DIR}/${apk_name}/decompile" "$apk" >> "$LOG_FILE" 2>&1; then
+        # Report
+        bash "${SCRIPT_DIR}/report.sh" "${RESULTS_DIR}/${apk_name}/decompile" "$apk" >> "$LOG_FILE" 2>&1 || true
+        echo "  [+] OK - ${RESULTS_DIR}/${apk_name}/decompile/REPORT.md"
+        ((++PASS))
+    else
+        echo "  [-] Analysis failed (see log)"
         ((++FAIL))
     fi
     echo ""
