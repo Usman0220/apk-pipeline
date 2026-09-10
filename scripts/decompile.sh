@@ -30,6 +30,30 @@ URLS_DIR="${OUTPUT_DIR}/urls"
 NATIVE_DIR="${OUTPUT_DIR}/native_libs"
 META_DIR="${OUTPUT_DIR}/metadata"
 
+# extract_so_files <apk> <dest_dir>
+#   Extract all *.so from an APK, or from every inner APK of an App Bundle
+#   (.apks/.xapk/.apkm). Writes each extracted .so path to stdout.
+extract_so_files() {
+    local apk="$1" dest="$2"
+    mkdir -p "$dest"
+    case "${apk##*.}" in
+        apks|xapk|apkm)
+            while IFS= read -r inner; do
+                [ -z "$inner" ] && continue
+                unzip -o -q "$apk" "$inner" -d "$dest" 2>/dev/null || true
+            done < <(unzip -Z1 "$apk" 2>/dev/null | grep -E '\.apk$' || true)
+            while IFS= read -r inner_apk; do
+                [ -f "$inner_apk" ] || continue
+                unzip -o -q "$inner_apk" 'lib/*' -d "$dest" 2>/dev/null || true
+            done < <(find "$dest" -maxdepth 1 -name '*.apk' 2>/dev/null || true)
+            ;;
+        *)
+            unzip -o -q "$apk" 'lib/*' -d "$dest" 2>/dev/null || true
+            ;;
+    esac
+    find "$dest" -name '*.so' -type f 2>/dev/null || true
+}
+
 echo "╔══════════════════════════════════════════════════╗"
 echo "║         APK DECOMPILE PIPELINE                   ║"
 echo "╚══════════════════════════════════════════════════╝"
@@ -167,6 +191,48 @@ case "$APK2URL_MODE" in
         grep -oE '((http|https)://[^/]+)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
             | awk -F/ '{print $1 "//" $3}' | sort -u > "${URLS_DIR}/${BASENAME}_domains.txt" || true
         grep -E '^www\.' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null | sort -u >> "${URLS_DIR}/${BASENAME}_domains.txt" || true
+
+        # Native binary strings: Flutter/Dart apps compile their logic into
+        # libapp.so (+ libflutter.so), invisible to java/kt/smali greps.
+        # Extract .so files and run `strings` to catch URLs/IPs/domains in
+        # the compiled snapshot. Handles single .apk and .apks App Bundles.
+        if [ "$EXTRACT_NATIVE_LIBS" = "true" ]; then
+            echo "[+] Native binary string scan (libapp.so / Dart snapshot)..."
+            native_scan="${URLS_DIR}/_native_scan"
+            native_strings_file="${URLS_DIR}/${BASENAME}_native_strings.txt"
+            : > "$native_strings_file"
+
+            while IFS= read -r so; do
+                strings -n 6 "$so" 2>/dev/null
+            done < <(extract_so_files "$APK_FILE" "$native_scan") >> "$native_strings_file" || true
+            rm -rf "$native_scan"
+
+            if [ -s "$native_strings_file" ]; then
+                grep -oE "$URL_RE" "$native_strings_file" 2>/dev/null \
+                    >> "${URLS_DIR}/${BASENAME}_urls.txt" || true
+                sort -u -o "${URLS_DIR}/${BASENAME}_urls.txt" "${URLS_DIR}/${BASENAME}_urls.txt"
+
+                # Regenerate derived lists from the merged set so native hits
+                # are reflected in uniqurls/ips/domains too.
+                grep -oE '((http|https)://[^/]+)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
+                    | sort -u > "${URLS_DIR}/${BASENAME}_uniqurls.txt" || true
+                grep -E '^www\.' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null | sort -u >> "${URLS_DIR}/${BASENAME}_uniqurls.txt" || true
+
+                grep -oE '((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
+                    | sort -u > "${URLS_DIR}/${BASENAME}_ips.txt" || true
+
+                grep -oE '((http|https)://[^/]+)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
+                    | awk -F/ '{print $1 "//" $3}' | sort -u > "${URLS_DIR}/${BASENAME}_domains.txt" || true
+                grep -E '^www\.' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null | sort -u >> "${URLS_DIR}/${BASENAME}_domains.txt" || true
+
+                native_url_count=$(grep -oE "$URL_RE" "$native_strings_file" 2>/dev/null | wc -l || echo 0)
+                echo "[+] Native strings: $native_url_count URL(s) found"
+                echo "    native strings: $native_strings_file"
+            else
+                echo "[~] No URLs in native binaries"
+                rm -f "$native_strings_file"
+            fi
+        fi
         ;;
 esac
 
@@ -191,12 +257,16 @@ if [ "$EXTRACT_NATIVE_LIBS" = "true" ]; then
         cp -r "$APKTOOL_DIR/lib/"* "$NATIVE_DIR/" 2>/dev/null || true
     fi
 
-    # Also extract directly from APK
-    unzip -o -q "$APK_FILE" "lib/*" -d "$OUTPUT_DIR/_lib_extract" 2>/dev/null || true
-    if [ -d "$OUTPUT_DIR/_lib_extract/lib" ]; then
-        cp -r "$OUTPUT_DIR/_lib_extract/lib/"* "$NATIVE_DIR/" 2>/dev/null || true
-    fi
-    rm -rf "$OUTPUT_DIR/_lib_extract"
+    # Extract directly from APK (helper handles .apks/.xapk/.apkm bundles)
+    scratch="${OUTPUT_DIR}/_lib_extract"
+    rm -rf "$scratch"
+    mkdir -p "$scratch"
+    while IFS= read -r so; do
+        rel="${so#*lib/}"
+        mkdir -p "$(dirname "${NATIVE_DIR}/${rel}")"
+        cp "$so" "${NATIVE_DIR}/${rel}" 2>/dev/null || true
+    done < <(extract_so_files "$APK_FILE" "$scratch")
+    rm -rf "$scratch"
 
     so_count=$(find "$NATIVE_DIR" -name "*.so" 2>/dev/null | wc -l || true)
     echo "[+] Native .so files: $so_count"

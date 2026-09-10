@@ -1,6 +1,9 @@
 # Pipeline output (pulled APKs, decompiled sources, reports)
 output/
 
+# Graphify analysis artifacts
+graphify-out/
+
 # Logs
 *.log
 

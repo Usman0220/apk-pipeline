@@ -33,6 +33,7 @@ APK Input
     │   ├── jadx          Java/Kotlin sources (deobfuscated)
     │   ├── dex2jar       JAR conversion
     │   ├── apk2url       URL/domain/IP extraction
+    │   ├── native-strings URL extraction from compiled binaries (libapp.so Dart snapshot)
     │   ├── radare2       native .so string analysis
     │   └── exiftool      file metadata
     │
