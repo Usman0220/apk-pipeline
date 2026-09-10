@@ -17,6 +17,9 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m' # No Color
 
+# Workspace directory (parent of SCRIPT_DIR)
+export WORKSPACE="$SCRIPT_DIR"
+
 # Cache configuration
 CACHE_DIR="$WORKSPACE/.cache"
 HASH_FILE="$CACHE_DIR/apk_hashes.txt"
@@ -83,18 +86,9 @@ init_cache
 VERSION="1.0.0"
 
 banner() {
-    cat <<EOF
-
-  ${CYAN}███████╗ ██████╗  ██████╗ ███████╗ ███╗   ███╗${NC}
-  ${CYAN}██╔════╝██╔═══██╗██╔═══██╗██╔════╝ ╚██╗ ██╔╝${NC}
-  ${CYAN}███████╗██║   ██║██║   ██║███████╗  ╚████╔╝${NC}
-  ${CYAN}╚════██║██║   ██║██║   ██║╚════██║   ╚██╔╝${NC}
-  ${CYAN}██╔═══██║██║   ██║██║   ██║██╔═══██║    ██║${NC}
-  ${CYAN}╚═╝  ╚═╝╚═╝   ╚═╝╚═╝   ╚═╝╚═╝  ╚═╝    ╚═╝${NC}
-
-  ${BOLD}APK Reverse Engineering Pipeline v${VERSION}${NC}
-  ${DIM}jadx + apktool + apk2url + frida + yara + r2${NC}
-EOF
+    printf '%b\n' "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+    printf '%b\n' "${CYAN}║         APK DECOMPILE PIPELINE                   ║${NC}"
+    printf '%b\n' "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 }
 
 usage() {
@@ -108,6 +102,7 @@ Commands:
   analyze     Run deep static analysis (secrets + permissions + strings)
   report      Generate markdown/HTML report
   quick       Quick scan: URLs + secrets only (decompile + grep)
+  apk2url     Extract URLs/endpoints only (fast, no full decompile)
   full        Run full pipeline (decompile + analyze + report)
   batch       Process multiple APKs in parallel
   check       Check tool availability
@@ -133,6 +128,7 @@ Examples:
   $(basename "$0") batch ./apks/ --concurrency 4
   $(basename "$0") decompile app.apk -o ./output/
   $(basename "$0") analyze ./output/app/decompile
+  $(basename "$0") apk2url app.apk
   $(basename "$0") cache-clear
 EOF
     exit 0
@@ -233,6 +229,74 @@ case "$COMMAND" in
         echo "[+] Quick scan complete"
         echo "    URLs:    ${DECOMPILE_OUT}/urls/"
         echo "    Secrets: ${DECOMPILE_OUT}/analysis/secrets.txt"
+        ;;
+    apk2url)
+        APK_FILE="${1:-}"
+        OUTPUT_DIR="${2:-}"
+        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") apk2url <apk_file> [output_dir]"; exit 1; }
+        
+        BASENAME="$(basename "$APK_FILE" .apk)"
+        DECOMPILE_OUT="${OUTPUT_DIR:-${OUTPUT_BASE}/${BASENAME}/decompile}"
+        URLS_DIR="${DECOMPILE_OUT}/urls"
+        
+        mkdir -p "$URLS_DIR"
+        
+        echo ""
+        echo "Extracting URLs from: $APK_FILE"
+        echo ""
+        
+        # Use fast mode extraction logic directly
+        URL_RE='(\b(https?)://|www\.)[-A-Za-z0-9+&@#/%?=~_|!:,.;]*[-A-Za-z0-9+&@#/%=~_|]'
+        
+        # Extract from APK directly using unzip and strings (fastest method)
+        TEMP_DIR=$(mktemp -d)
+        trap "rm -rf \$TEMP_DIR" EXIT
+        
+        # Unzip APK to temp location
+        unzip -q -o "$APK_FILE" -d "$TEMP_DIR" 2>/dev/null || true
+        
+        # Search for URLs in all files
+        {
+            # Search in XML files (AndroidManifest.xml, etc.)
+            find "$TEMP_DIR" -name "*.xml" -exec grep -oE "$URL_RE" {} \; 2>/dev/null
+            
+            # Search in raw resources
+            find "$TEMP_DIR" -name "*.json" -exec grep -oE "$URL_RE" {} \; 2>/dev/null
+            
+            # Search in DEX files using strings
+            find "$TEMP_DIR" -name "*.dex" -exec strings {} \; 2>/dev/null | grep -oE "$URL_RE"
+            
+            # Search in native libraries
+            find "$TEMP_DIR" -name "*.so" -exec strings {} \; 2>/dev/null | grep -oE "$URL_RE"
+        } | sort -u > "${URLS_DIR}/${BASENAME}_urls.txt"
+        
+        # Extract unique domains
+        grep -oE '((http|https)://[^/]+)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
+            | sort -u > "${URLS_DIR}/${BASENAME}_domains.txt" || true
+        grep -E '^www\.' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null | sort -u >> "${URLS_DIR}/${BASENAME}_domains.txt" || true
+        
+        # Extract IPs
+        grep -oE '((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null \
+            | sort -u > "${URLS_DIR}/${BASENAME}_ips.txt" || true
+        
+        url_count=$(grep -cv '^$' "${URLS_DIR}/${BASENAME}_urls.txt" 2>/dev/null || echo 0)
+        domain_count=$(grep -cv '^$' "${URLS_DIR}/${BASENAME}_domains.txt" 2>/dev/null || echo 0)
+        ip_count=$(grep -cv '^$' "${URLS_DIR}/${BASENAME}_ips.txt" 2>/dev/null || echo 0)
+        
+        echo ""
+        printf '%b\n' "${CYAN}========================================${NC}"
+        printf '%b\n' "${GREEN}       APK2URL EXTRACTION COMPLETE      ${NC}"
+        printf '%b\n' "${CYAN}========================================${NC}"
+        echo ""
+        echo "[+] URLs extracted: $url_count"
+        echo "[+] Domains found:  $domain_count"
+        echo "[+] IPs found:      $ip_count"
+        echo ""
+        echo "    Output: ${URLS_DIR}/"
+        echo "    URLs file:    ${URLS_DIR}/${BASENAME}_urls.txt"
+        echo "    Domains file: ${URLS_DIR}/${BASENAME}_domains.txt"
+        echo "    IPs file:     ${URLS_DIR}/${BASENAME}_ips.txt"
+        echo ""
         ;;
     full)
         APK_FILE="${1:-}"

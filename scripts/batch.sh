@@ -6,6 +6,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../config.env"
 
+# Workspace directory (same as apk-pipeline.sh)
+export WORKSPACE="${SCRIPT_DIR}/.."
+
 # Cache configuration (shared with apk-pipeline.sh)
 CACHE_DIR="$WORKSPACE/.cache"
 HASH_FILE="$CACHE_DIR/apk_hashes.txt"
