@@ -3,6 +3,7 @@
 # Usage: sudo bash setup.sh
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  APK Pipeline - Dependency Setup                 ║"

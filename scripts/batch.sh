@@ -46,13 +46,18 @@ if [ -d "$INPUT" ]; then
     while IFS= read -r apk; do
         APK_LIST+=("$apk")
     done < <(find "$INPUT" -maxdepth 1 -name "*.apk" -type f | sort)
-elif [ -f "$INPUT" ]; then
+elif [[ "$INPUT" == *.txt ]] && [ -f "$INPUT" ]; then
+    # Text file with one APK path per line
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         [ -f "$line" ] && APK_LIST+=("$line")
     done < "$INPUT"
-elif [ -f "$INPUT" ]; then
+elif [ -f "$INPUT" ] && [[ "$INPUT" == *.apk ]]; then
+    # Single APK file
     APK_LIST=("$INPUT")
+else
+    echo "[-] Invalid input: $INPUT"
+    exit 1
 fi
 
 TOTAL=${#APK_LIST[@]}
