@@ -193,11 +193,14 @@ analyze_apk_tui() {
 
     # What to run
     local stages
-    stages=$(echo -e "quick (URLs + secrets)\nfull\ndecompile\nanalyze\nreport\n Back" | fzf --height=13 --reverse --border --prompt="Stage> " || echo "Back")
+    stages=$(echo -e "quick|Quick Scan|Extract URLs \& secrets only (grep, strings)\nfull|Full Analysis|Decompile + Secrets + Permissions + Report (jadx, apktool, grep)\ndecompile|Decompile Only|Convert APK to Smali/Java (apktool, jadx)\nanalyze|Analyze Only|Scan existing decompiled code (grep, regex)\nreport|Generate Report|Create Markdown/HTML summary from results\nback|Back|Return to main menu" | fzf --height=20 --reverse --border --prompt="Stage> █ " \
+        --with-nth=1..2 \
+        --delimiter="|" \
+        --preview="echo \\"Mode: {1}\\"; echo \\"Description: {2}\\"; echo \\"Tools: {3}\\"")
 
     case "$stages" in
-        "Back"|"") return ;;
-        "quick"*)
+        *back*|*"Back"*|"") return ;;
+        *quick*)
             msg "Running quick scan (URLs + secrets)..."
             bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
             local decompile_dir="${OUTPUT_BASE}/${apk_name}/decompile"
@@ -206,7 +209,7 @@ analyze_apk_tui() {
             ok "URLs:    ${decompile_dir}/urls/"
             ok "Secrets: ${decompile_dir}/analysis/secrets.txt"
             ;;
-        "full")
+        *full*)
             msg "Running full pipeline..."
             bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
             local decompile_dir="${OUTPUT_BASE}/${apk_name}/decompile"
@@ -217,12 +220,12 @@ analyze_apk_tui() {
             ok "Analysis: ${decompile_dir}/analysis/"
             ok "URLs: ${decompile_dir}/urls/"
             ;;
-        "decompil"*)
+        *decompil*)
             msg "Decompiling..."
             bash "${SCRIPT_DIR}/scripts/decompile.sh" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
             LAST_DECOMPILE_DIR="${OUTPUT_BASE}/${apk_name}/decompile"
             ;;
-        "analyze")
+        *analyze*)
             local decompile_dir="${OUTPUT_BASE}/${apk_name}/decompile"
             if [ ! -d "$decompile_dir" ]; then
                 err "Run decompile first"
@@ -233,7 +236,7 @@ analyze_apk_tui() {
             bash "${SCRIPT_DIR}/scripts/analyze.sh" "$decompile_dir" "$chosen" 2>&1 | while IFS= read -r line; do echo "  $line"; done
             LAST_DECOMPILE_DIR="$decompile_dir"
             ;;
-        "report")
+        *report*)
             local decompile_dir="${OUTPUT_BASE}/${apk_name}/decompile"
             if [ ! -d "$decompile_dir" ]; then
                 err "Run decompile first"
