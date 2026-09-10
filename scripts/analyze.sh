@@ -44,11 +44,14 @@ scan_secrets() {
 
         echo ""
         echo "--- AWS Keys ---"
-        grep -rniE '(AKIA[0-9A-Z]{16}|aws[_-]?secret[_-]?access[_-]?key)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+        # AWS Access Key ID pattern
+        grep -rniE 'AKIA[0-9A-Z]{16}' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+        # AWS Secret Key pattern
+        grep -rniE '(aws[_-]?secret[_-]?access[_-]?key|wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
 
         echo ""
         echo "--- Google API Keys ---"
-        grep -rniE '(AIza[0-9A-Za-z_-]{35})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+        grep -rniE 'AIza[0-9A-Za-z_-]{35}' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
 
         echo ""
         echo "--- Firebase ---"
@@ -60,16 +63,31 @@ scan_secrets() {
 
         echo ""
         echo "--- Private Keys ---"
-        grep -rniE '(BEGIN (RSA |DSA |EC )?PRIVATE KEY)' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
+        grep -rniE 'BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
 
         echo ""
         echo "--- JWT Tokens ---"
-        grep -rniE '(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
+        grep -rniE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' "${SEARCH_DIRS[@]}" 2>/dev/null | head -10
 
         echo ""
-        echo "--- Hardcoded IPs ---"
+        echo "--- Hardcoded IPs (Public Only) ---"
+        # Extract all IPs, then filter out private/reserved ranges
         grep -rnoE '\b((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?)\b' "${SEARCH_DIRS[@]}" 2>/dev/null \
-            | grep -vE '(0\.0\.0\.0|127\.0\.0|10\.|172\.(1[6-9]|2|3[01])\.|192\.168\.|255\.)' | sort -u | head -50
+            | grep -vE '(0\.0\.0\.0|127\.0\.0\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|255\.255|169\.254\.|::1|localhost)' \
+            | sort -u | head -50
+
+        echo ""
+        echo "--- Azure SAS Tokens ---"
+        grep -rniE 'sig=[A-Za-z0-9%]{40,}' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
+        echo ""
+        echo "--- GitHub Tokens ---"
+        grep -rniE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|ghr_[A-Za-z0-9]{36})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
+        echo ""
+        echo "--- Stripe Keys ---"
+        grep -rniE '(sk_live_[0-9a-zA-Z]{24}|pk_live_[0-9a-zA-Z]{24})' "${SEARCH_DIRS[@]}" 2>/dev/null | head -20
+
     } > "${ANALYSIS_DIR}/secrets.txt" 2>&1
 
     echo "[+] Secrets scan saved"
@@ -104,9 +122,9 @@ else
     echo "# No YARA scan performed" > "${ANALYSIS_DIR}/yara_hits.txt"
 fi
 
-# ── 2. Permissions analysis ───────────────────────────
+# ── 2. Permissions analysis with Risk Scoring ───────────
 echo ""
-echo "━━━ [2/8] Permissions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "━━━ [2/8] Permissions & Risk Score ━━━━━━━━━━━━━━━━━"
 {
     echo "=== ANDROID PERMISSIONS ==="
     # From manifest
@@ -130,11 +148,121 @@ echo "━━━ [2/8] Permissions ━━━━━━━━━━━━━━━�
         "READ_MEDIA_AUDIO" "BODY_SENSORS" "ACTIVITY_RECOGNITION"
     )
 
+    # High-risk permissions (score = 3)
+    high_risk_perms=("SEND_SMS" "READ_SMS" "RECEIVE_SMS" "READ_CALL_LOG" "WRITE_CALL_LOG" 
+                     "CALL_PHONE" "CAMERA" "RECORD_AUDIO" "READ_CONTACTS" "WRITE_CONTACTS"
+                     "ACCESS_FINE_LOCATION" "BODY_SENSORS" "INSTALL_PACKAGES" "DELETE_PACKAGES")
+    
+    # Medium-risk permissions (score = 2)
+    medium_risk_perms=("READ_PHONE_STATE" "READ_EXTERNAL_STORAGE" "WRITE_EXTERNAL_STORAGE"
+                       "ACCESS_COARSE_LOCATION" "READ_CALENDAR" "WRITE_CALENDAR"
+                       "SYSTEM_ALERT_WINDOW" "WRITE_SETTINGS" "READ_MEDIA_IMAGES"
+                       "READ_MEDIA_VIDEO" "READ_MEDIA_AUDIO")
+    
+    # Low-risk permissions (score = 1)
+    low_risk_perms=("RECEIVE_BOOT_COMPLETED" "ACTIVITY_RECOGNITION")
+
+    high_count=0
+    medium_count=0
+    low_count=0
+    found_high=()
+    found_medium=()
+    found_low=()
+
     for perm in "${dangerous_perms[@]}"; do
         if grep -qi "$perm" "$manifest" 2>/dev/null; then
-            echo "  [!] $perm"
+            # Check risk level
+            is_high=false
+            is_medium=false
+            is_low=false
+            
+            for hp in "${high_risk_perms[@]}"; do
+                [[ "$perm" == *"$hp"* ]] && is_high=true && break
+            done
+            if ! $is_high; then
+                for mp in "${medium_risk_perms[@]}"; do
+                    [[ "$perm" == *"$mp"* ]] && is_medium=true && break
+                done
+            fi
+            if ! $is_high && ! $is_medium; then
+                for lp in "${low_risk_perms[@]}"; do
+                    [[ "$perm" == *"$lp"* ]] && is_low=true && break
+                done
+            fi
+            
+            if $is_high; then
+                ((high_count++))
+                found_high+=("$perm")
+                echo "  [!!!] $perm (HIGH RISK)"
+            elif $is_medium; then
+                ((medium_count++))
+                found_medium+=("$perm")
+                echo "  [!!] $perm (MEDIUM RISK)"
+            elif $is_low; then
+                ((low_count++))
+                found_low+=("$perm")
+                echo "  [!] $perm (LOW RISK)"
+            else
+                echo "  [!] $perm"
+            fi
         fi
     done
+
+    echo ""
+    echo "=== EXPORTED COMPONENTS ==="
+    # Check for exported activities and services
+    exported_count=0
+    if [ -f "$manifest" ]; then
+        while IFS= read -r line; do
+            if echo "$line" | grep -qi 'android:exported="true"'; then
+                ((exported_count++))
+            fi
+        done < <(grep -iE '(activity|service|receiver|provider)' "$manifest" 2>/dev/null)
+    fi
+    echo "Exported components: $exported_count"
+    
+    # Calculate risk score
+    risk_score=$((high_count * 3 + medium_count * 2 + low_count * 1))
+    if [ $exported_count -gt 5 ]; then
+        risk_score=$((risk_score + exported_count / 2))
+    fi
+    
+    # Determine risk level
+    if [ $risk_score -ge 15 ]; then
+        risk_level="CRITICAL"
+        risk_icon="🔴"
+    elif [ $risk_score -ge 8 ]; then
+        risk_level="HIGH"
+        risk_icon="🟠"
+    elif [ $risk_score -ge 4 ]; then
+        risk_level="MEDIUM"
+        risk_icon="🟡"
+    elif [ $risk_score -ge 1 ]; then
+        risk_level="LOW"
+        risk_icon="🟢"
+    else
+        risk_level="MINIMAL"
+        risk_icon="⚪"
+    fi
+
+    echo ""
+    echo "=== RISK SCORE SUMMARY ==="
+    echo "High-risk permissions: $high_count"
+    echo "Medium-risk permissions: $medium_count"
+    echo "Low-risk permissions: $low_count"
+    echo "Exported components: $exported_count"
+    echo ""
+    echo "OVERALL RISK SCORE: $risk_score / 50"
+    echo "RISK LEVEL: $risk_icon $risk_level"
+    
+    if [ ${#found_high[@]} -gt 0 ]; then
+        echo ""
+        echo "⚠️  HIGH-RISK PERMISSIONS FOUND:"
+        for p in "${found_high[@]}"; do
+            echo "   - $p"
+        done
+    fi
+    
 } > "${ANALYSIS_DIR}/permissions.txt" 2>&1
 
 echo "[+] Permissions analysis saved"
