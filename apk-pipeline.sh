@@ -6,6 +6,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
 
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
 # Cache configuration
 CACHE_DIR="$WORKSPACE/.cache"
 HASH_FILE="$CACHE_DIR/apk_hashes.txt"
@@ -74,15 +85,15 @@ VERSION="1.0.0"
 banner() {
     cat <<EOF
 
-  █████╗ ██████╗  █████╗ ██████╗ ██╗  ██╗
- ██╔══██╗██╔══██╗██╔══██╗██╔══██╗██║ ██╔╝
- ███████║██████╔╝███████║██████╔╝█████╔╝
- ██╔══██║██╔═══╝ ██╔══██║██╔══██╗██╔═██╗
- ██║  ██║██║     ██║  ██║██║  ██║██║  ██╗
- ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+  ${CYAN}███████╗ ██████╗  ██████╗ ███████╗ ███╗   ███╗${NC}
+  ${CYAN}██╔════╝██╔═══██╗██╔═══██╗██╔════╝ ╚██╗ ██╔╝${NC}
+  ${CYAN}███████╗██║   ██║██║   ██║███████╗  ╚████╔╝${NC}
+  ${CYAN}╚════██║██║   ██║██║   ██║╚════██║   ╚██╔╝${NC}
+  ${CYAN}██╔═══██║██║   ██║██║   ██║██╔═══██║    ██║${NC}
+  ${CYAN}╚═╝  ╚═╝╚═╝   ╚═╝╚═╝   ╚═╝╚═╝  ╚═╝    ╚═╝${NC}
 
-  APK Reverse Engineering Pipeline v${VERSION}
-  jadx + apktool + apk2url + frida + yara + r2
+  ${BOLD}APK Reverse Engineering Pipeline v${VERSION}${NC}
+  ${DIM}jadx + apktool + apk2url + frida + yara + r2${NC}
 EOF
 }
 

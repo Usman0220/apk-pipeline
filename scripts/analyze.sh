@@ -6,6 +6,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../config.env"
 
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
 DECOMPILE_DIR="${1:-}"
 APK_FILE="${2:-}"
 MODE="${3:-full}"   # full | quick (quick = secrets only; URLs via decompile)
@@ -38,9 +49,9 @@ fi
 ANALYSIS_DIR="${DECOMPILE_DIR}/analysis"
 mkdir -p "$ANALYSIS_DIR"
 
-echo "╔══════════════════════════════════════════════════╗"
-echo "║         APK ANALYSIS PIPELINE                    ║"
-echo "╚══════════════════════════════════════════════════╝"
+echo "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+echo "${CYAN}║         APK ANALYSIS PIPELINE                    ║${NC}"
+echo "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 
 TOTAL_STEPS=8
 
@@ -118,12 +129,12 @@ if [ "$MODE" = "quick" ]; then
     scan_secrets
     set -e
     echo ""
-    echo "╔══════════════════════════════════════════════════╗"
-    echo "║  QUICK SCAN COMPLETE (URLs + Secrets)            ║"
-    echo "╠══════════════════════════════════════════════════╣"
-    echo "║  URLs:    ${DECOMPILE_DIR}/urls/"
-    echo "║  Secrets: ${ANALYSIS_DIR}/secrets.txt"
-    echo "╚══════════════════════════════════════════════════╝"
+    echo "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+    echo "${GREEN}║  QUICK SCAN COMPLETE (URLs + Secrets)            ║${NC}"
+    echo "${GREEN}╠══════════════════════════════════════════════════╣${NC}"
+    echo "${GREEN}║${NC}  ${BOLD}URLs:${NC}    ${DECOMPILE_DIR}/urls/"
+    echo "${GREEN}║${NC}  ${BOLD}Secrets:${NC} ${ANALYSIS_DIR}/secrets.txt"
+    echo "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
     exit 0
 fi
 
@@ -433,9 +444,9 @@ set -e
 # Clear progress line and show summary
 printf "\r%70s\r" ""
 echo ""
-echo "╔══════════════════════════════════════════════════╗"
-echo "║  ANALYSIS COMPLETE                               ║"
-echo "╠══════════════════════════════════════════════════╣"
-echo "║  Output: $ANALYSIS_DIR"
-echo "║  Files:  $(ls "$ANALYSIS_DIR"/*.txt 2>/dev/null | wc -l) analysis reports"
-echo "╚══════════════════════════════════════════════════╝"
+echo "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+echo "${GREEN}║  ANALYSIS COMPLETE                               ║${NC}"
+echo "${GREEN}╠══════════════════════════════════════════════════╣${NC}"
+echo "${GREEN}║${NC}  ${BOLD}Output:${NC} $ANALYSIS_DIR"
+echo "${GREEN}║${NC}  ${BOLD}Files:${NC}  $(ls "$ANALYSIS_DIR"/*.txt 2>/dev/null | wc -l) analysis reports"
+echo "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
