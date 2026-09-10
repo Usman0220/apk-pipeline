@@ -88,7 +88,7 @@ pull_split_apks() {
         name=$(basename "$path")
         echo "  -> $name"
         $ADB pull "$path" "${out_dir}/${name}" 2>&1 | tail -1
-        ((count++))
+        ((++count)) || true
     done <<< "$paths"
 
     echo "[+] Pulled $count APK(s) to: $out_dir"
@@ -106,7 +106,7 @@ pull_all_apks() {
     while IFS= read -r pkg; do
         [ -z "$pkg" ] && continue
         pull_single_apk "$pkg" "$out_dir/$pkg"
-        ((count++))
+        ((++count)) || true
     done <<< "$packages"
 
     echo "[+] Done. Pulled $count APK(s) to: $out_dir"

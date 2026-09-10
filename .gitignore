@@ -1,6 +1,1 @@
-The modified files (`scripts/batch.sh` and `setup.sh`) are shell scripts, which are source code files. There are no build artifacts, dependency directories, temporary files, or other items in the change list that warrant adding to `.gitignore`.
-
-Since only source/config files are present and there are no build artifacts, dependencies, or temp files to ignore, the optimized `.gitignore` remains empty.
-
-```(empty)
-```
+Nothing should be ignored since the changes only include shell script files (.sh) which are source code files.
