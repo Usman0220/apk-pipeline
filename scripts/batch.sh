@@ -75,7 +75,7 @@ PASS=0
 FAIL=0
 
 for apk in "${APK_LIST[@]}"; do
-    ((COUNT++))
+    ((++COUNT))
     apk_name="$(basename "$apk" .apk)"
     echo "[$COUNT/$TOTAL] Processing: $apk_name"
 
@@ -86,14 +86,14 @@ for apk in "${APK_LIST[@]}"; do
             # Report
             bash "${SCRIPT_DIR}/report.sh" "${RESULTS_DIR}/${apk_name}/decompile" "$apk" >> "$LOG_FILE" 2>&1 || true
             echo "  [+] OK - ${RESULTS_DIR}/${apk_name}/decompile/REPORT.md"
-            ((PASS++))
+            ((++PASS))
         else
             echo "  [-] Analysis failed (see log)"
-            ((FAIL++))
+            ((++FAIL))
         fi
     else
         echo "  [-] Decompile failed (see log)"
-        ((FAIL++))
+        ((++FAIL))
     fi
     echo ""
 done
