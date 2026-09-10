@@ -566,7 +566,7 @@ main_menu() {
         echo ""
 
         local choice
-        choice=$(echo -e " Package Browser   ${DIM}Browse & select APKs from device${RESET}\n Pull APKs         ${DIM}Download selected packages${RESET}\n Analyze APK       ${DIM}Run decompile + analysis pipeline\n URL Browser       ${DIM}View extracted URLs & domains${RESET}\n Analysis Browser  ${DIM}Browse analysis results${RESET}\n Batch Mode        ${DIM}Process multiple APKs${RESET}\n Delete Output     ${DIM}Remove pulled APKs / decompile results${RESET}\n Check Tools       ${DIM}Verify tool availability${RESET}\n Quit" | fzf --height=50% --reverse --border --no-multi --prompt="> " \
+        choice=$(echo -e " Package Browser   \${DIM}Browse & select APKs from device\${RESET}\n Pull APKs         \${DIM}Download selected packages\${RESET}\n Analyze APK       \${DIM}Run decompile + analysis pipeline\${RESET}\n URL Browser       \${DIM}View extracted URLs & domains\${RESET}\n Analysis Browser  \${DIM}Browse analysis results\${RESET}\n Batch Mode        \${DIM}Process multiple APKs\${RESET}\n Delete Output     \${DIM}Remove pulled APKs / decompile results\${RESET}\n Check Tools       \${DIM}Verify tool availability\${RESET}\n Quit" | envsubst | fzf --height=50% --reverse --border --no-multi --prompt="> " \
             --header="Use arrow keys or type to filter" | awk '{print $1}')
 
         case "$choice" in
