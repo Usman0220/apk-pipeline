@@ -1,1 +1,1 @@
-Nothing needs to be added to the .gitignore file since the changes only include shell script files (.sh) which are source code files and should not be ignored.
+Nothing should be ignored based on the provided file changes. The only modified file is `tui.sh`, which appears to be a shell script source file and should not be ignored.
