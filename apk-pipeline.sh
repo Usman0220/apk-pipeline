@@ -6,6 +6,69 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
 
+# Cache configuration
+CACHE_DIR="$WORKSPACE/.cache"
+HASH_FILE="$CACHE_DIR/apk_hashes.txt"
+
+init_cache() {
+    mkdir -p "$CACHE_DIR"
+    touch "$HASH_FILE"
+}
+
+get_apk_hash() {
+    local apk_path="$1"
+    if [ -f "$apk_path" ]; then
+        sha256sum "$apk_path" | awk '{print $1}'
+    else
+        echo ""
+    fi
+}
+
+is_cache_valid() {
+    local apk_path="$1"
+    local output_dir="$2"
+    local current_hash=$(get_apk_hash "$apk_path")
+    
+    if [ -z "$current_hash" ]; then
+        return 1
+    fi
+
+    if [ ! -f "$HASH_FILE" ]; then
+        return 1
+    fi
+
+    local stored_hash=$(grep "^$apk_path|" "$HASH_FILE" 2>/dev/null | cut -d'|' -f2)
+    
+    if [ "$current_hash" = "$stored_hash" ] && [ -d "$output_dir" ] && [ -f "$output_dir/report.txt" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+update_cache() {
+    local apk_path="$1"
+    local hash=$(get_apk_hash "$apk_path")
+    
+    # Remove old entry if exists
+    if grep -q "^$apk_path|" "$HASH_FILE" 2>/dev/null; then
+        sed -i "/^$apk_path|/d" "$HASH_FILE"
+    fi
+    
+    # Add new entry
+    echo "$apk_path|$hash" >> "$HASH_FILE"
+}
+
+clean_cache() {
+    if [ -d "$CACHE_DIR" ]; then
+        rm -rf "$CACHE_DIR"
+        echo "Cache cleared."
+    fi
+}
+
+# Initialize cache on startup
+init_cache
+
 VERSION="1.0.0"
 
 banner() {
@@ -30,13 +93,14 @@ Usage: $(basename "$0") <command> [options]
 Commands:
   tui         Launch interactive TUI (fzf-based)
   pull        Pull APK(s) from connected device
-  decompile   Decompile APK with all engines
-  analyze     Run deep static analysis
-  report      Generate markdown report
-  quick       Quick scan: URLs + secrets only (decompile + secrets)
+  decompile   Decompile APK with all engines (jadx + apktool)
+  analyze     Run deep static analysis (secrets + permissions + strings)
+  report      Generate markdown/HTML report
+  quick       Quick scan: URLs + secrets only (decompile + grep)
   full        Run full pipeline (decompile + analyze + report)
-  batch       Process multiple APKs
+  batch       Process multiple APKs in parallel
   check       Check tool availability
+  cache-clear Clear the decompilation cache
 
 Pull options:
   --list                  List installed packages
@@ -46,6 +110,7 @@ Pull options:
 Decompile/Analyze options:
   <apk_file>              Target APK
   -o, --output <dir>      Output directory
+  --no-cache              Skip cache and force re-decompile
 
 Batch options:
   <directory>             Directory with APKs
@@ -57,7 +122,7 @@ Examples:
   $(basename "$0") batch ./apks/ --concurrency 4
   $(basename "$0") decompile app.apk -o ./output/
   $(basename "$0") analyze ./output/app/decompile
-  $(basename "$0") check
+  $(basename "$0") cache-clear
 EOF
     exit 0
 }
@@ -131,12 +196,27 @@ case "$COMMAND" in
     quick)
         APK_FILE="${1:-}"
         OUTPUT_DIR="${2:-}"
-        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") quick <apk_file> [output_dir]"; exit 1; }
-        echo ""
-        echo "Quick scan (URLs + secrets) on: $APK_FILE"
-        echo ""
-        bash "${SCRIPT_DIR}/scripts/decompile.sh" "$APK_FILE" "$OUTPUT_DIR"
+        NO_CACHE=false
+        if [[ "${3:-}" == "--no-cache" ]]; then
+            NO_CACHE=true
+        fi
+        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") quick <apk_file> [output_dir] [--no-cache]"; exit 1; }
+        
         DECOMPILE_OUT="${OUTPUT_DIR:-${OUTPUT_BASE}/$(basename "$APK_FILE" .apk)/decompile}"
+        
+        # Check cache unless --no-cache is specified
+        if [ "$NO_CACHE" = false ] && is_cache_valid "$APK_FILE" "$DECOMPILE_OUT"; then
+            echo ""
+            echo "[CACHE HIT] Using cached decompilation for: $APK_FILE"
+            echo ""
+        else
+            echo ""
+            echo "Quick scan (URLs + secrets) on: $APK_FILE"
+            echo ""
+            bash "${SCRIPT_DIR}/scripts/decompile.sh" "$APK_FILE" "$OUTPUT_DIR"
+            update_cache "$APK_FILE"
+        fi
+        
         bash "${SCRIPT_DIR}/scripts/analyze.sh" "$DECOMPILE_OUT" "$APK_FILE" quick
         echo ""
         echo "[+] Quick scan complete"
@@ -146,12 +226,27 @@ case "$COMMAND" in
     full)
         APK_FILE="${1:-}"
         OUTPUT_DIR="${2:-}"
-        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") full <apk_file> [output_dir]"; exit 1; }
-        echo ""
-        echo "Running full pipeline on: $APK_FILE"
-        echo ""
-        bash "${SCRIPT_DIR}/scripts/decompile.sh" "$APK_FILE" "$OUTPUT_DIR"
+        NO_CACHE=false
+        if [[ "${3:-}" == "--no-cache" ]]; then
+            NO_CACHE=true
+        fi
+        [ -z "$APK_FILE" ] && { echo "Usage: $(basename "$0") full <apk_file> [output_dir] [--no-cache]"; exit 1; }
+        
         DECOMPILE_OUT="${OUTPUT_DIR:-${OUTPUT_BASE}/$(basename "$APK_FILE" .apk)/decompile}"
+        
+        # Check cache unless --no-cache is specified
+        if [ "$NO_CACHE" = false ] && is_cache_valid "$APK_FILE" "$DECOMPILE_OUT"; then
+            echo ""
+            echo "[CACHE HIT] Using cached decompilation for: $APK_FILE"
+            echo ""
+        else
+            echo ""
+            echo "Running full pipeline on: $APK_FILE"
+            echo ""
+            bash "${SCRIPT_DIR}/scripts/decompile.sh" "$APK_FILE" "$OUTPUT_DIR"
+            update_cache "$APK_FILE"
+        fi
+        
         bash "${SCRIPT_DIR}/scripts/analyze.sh" "$DECOMPILE_OUT" "$APK_FILE"
         bash "${SCRIPT_DIR}/scripts/report.sh" "$DECOMPILE_OUT" "$APK_FILE"
         echo ""
@@ -171,6 +266,9 @@ case "$COMMAND" in
         ;;
     check)
         check_tools
+        ;;
+    cache-clear)
+        clean_cache
         ;;
     -h|--help|help)
         usage
