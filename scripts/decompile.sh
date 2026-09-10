@@ -6,6 +6,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../config.env"
 
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
 APK_FILE="${1:-}"
 OUTPUT_DIR="${2:-}"
 PROGRESS_CALLBACK="${3:-}"  # Optional: command to call for progress updates
@@ -69,13 +80,13 @@ extract_so_files() {
     find "$dest" -name '*.so' -type f 2>/dev/null || true
 }
 
-echo "╔══════════════════════════════════════════════════╗"
-echo "║         APK DECOMPILE PIPELINE                   ║"
-echo "╚══════════════════════════════════════════════════╝"
-echo "[+] Target: $APK_FILE"
-echo "[+] SHA256: $(sha256sum "$APK_FILE" | awk '{print $1}')"
-echo "[+] Size:   $(du -h "$APK_FILE" | awk '{print $1}')"
-echo "[+] Output: $OUTPUT_DIR"
+echo "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+echo "${CYAN}║         APK DECOMPILE PIPELINE                   ║${NC}"
+echo "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+echo "${BOLD}[+] Target:${NC} $APK_FILE"
+echo "${BOLD}[+] SHA256:${NC} $(sha256sum "$APK_FILE" | awk '{print $1}')"
+echo "${BOLD}[+] Size:${NC}   $(du -h "$APK_FILE" | awk '{print $1}')"
+echo "${BOLD}[+] Output:${NC} $OUTPUT_DIR"
 echo ""
 
 TOTAL_STEPS=6
@@ -296,16 +307,16 @@ fi
 # Clear progress line and show summary
 printf "\r%70s\r" ""
 echo ""
-echo "╔══════════════════════════════════════════════════╗"
-echo "║  DECOMPILE COMPLETE                              ║"
-echo "╠══════════════════════════════════════════════════╣"
-echo "║  jadx sources:  $JADX_DIR"
-echo "║  apktool smali: $APKTOOL_DIR"
-echo "║  dex2jar:       $DEX2JAR_DIR"
-echo "║  urls/domains:  $URLS_DIR"
-echo "║  native libs:   $NATIVE_DIR"
-echo "║  metadata:      $META_DIR"
-echo "╚══════════════════════════════════════════════════╝"
+echo "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+echo "${GREEN}║  DECOMPILE COMPLETE                              ║${NC}"
+echo "${GREEN}╠══════════════════════════════════════════════════╣${NC}"
+echo "${GREEN}║${NC}  ${BOLD}jadx sources:${NC}  $JADX_DIR"
+echo "${GREEN}║${NC}  ${BOLD}apktool smali:${NC} $APKTOOL_DIR"
+echo "${GREEN}║${NC}  ${BOLD}dex2jar:${NC}       $DEX2JAR_DIR"
+echo "${GREEN}║${NC}  ${BOLD}urls/domains:${NC}  $URLS_DIR"
+echo "${GREEN}║${NC}  ${BOLD}native libs:${NC}   $NATIVE_DIR"
+echo "${GREEN}║${NC}  ${BOLD}metadata:${NC}      $META_DIR"
+echo "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 
 # Write decompile manifest
 cat > "${OUTPUT_DIR}/manifest.json" <<EOJSON
