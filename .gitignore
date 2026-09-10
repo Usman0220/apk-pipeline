@@ -1,17 +1,6 @@
-# Pipeline output (pulled APKs, decompiled sources, reports)
-output/
+The modified files (`scripts/batch.sh` and `setup.sh`) are shell scripts, which are source code files. There are no build artifacts, dependency directories, temporary files, or other items in the change list that warrant adding to `.gitignore`.
 
-# Graphify analysis artifacts
-graphify-out/
+Since only source/config files are present and there are no build artifacts, dependencies, or temp files to ignore, the optimized `.gitignore` remains empty.
 
-# Logs
-*.log
-
-# OS / editor
-.DS_Store
-*.swp
-.idea/
-.vscode/
-
-# Local test artifacts
-/tmp/
+```(empty)
+```
