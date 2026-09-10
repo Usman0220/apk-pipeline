@@ -9,6 +9,21 @@ source "${SCRIPT_DIR}/../config.env"
 DECOMPILE_DIR="${1:-}"
 APK_FILE="${2:-}"
 MODE="${3:-full}"   # full | quick (quick = secrets only; URLs via decompile)
+PROGRESS_CALLBACK="${4:-}"  # Optional: command to call for progress updates
+
+# Progress reporting function
+report_progress() {
+    local step="$1"
+    local total_steps="$2"
+    local message="$3"
+    local percent=$((step * 100 / total_steps))
+    
+    if [ -n "$PROGRESS_CALLBACK" ] && command -v "$PROGRESS_CALLBACK" >/dev/null 2>&1; then
+        $PROGRESS_CALLBACK "$percent" "$message"
+    else
+        printf "\r[%3d%%] %-50s" "$percent" "$message"
+    fi
+}
 
 if [ -z "$DECOMPILE_DIR" ]; then
     echo "Usage: $(basename "$0") <decompile_output_dir> [apk_file] [full|quick]"
@@ -26,6 +41,8 @@ mkdir -p "$ANALYSIS_DIR"
 echo "╔══════════════════════════════════════════════════╗"
 echo "║         APK ANALYSIS PIPELINE                    ║"
 echo "╚══════════════════════════════════════════════════╝"
+
+TOTAL_STEPS=8
 
 # ── Secrets scan (used by full & quick modes) ──────────
 scan_secrets() {
@@ -111,8 +128,7 @@ if [ "$MODE" = "quick" ]; then
 fi
 
 # ── 1. YARA rules scan ────────────────────────────────
-echo ""
-echo "━━━ [1/8] YARA scanning ━━━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 1 $TOTAL_STEPS "Running YARA scanning..."
 if [ -n "$YARA" ] && [ -f "${PIPELINE_DIR}/rules/default.yar" ]; then
     $YARA -r "${PIPELINE_DIR}/rules/default.yar" "$DECOMPILE_DIR" > "${ANALYSIS_DIR}/yara_hits.txt" 2>&1 || true
     yara_count=$(wc -l < "${ANALYSIS_DIR}/yara_hits.txt" 2>/dev/null || echo 0)
@@ -123,8 +139,7 @@ else
 fi
 
 # ── 2. Permissions analysis with Risk Scoring ───────────
-echo ""
-echo "━━━ [2/8] Permissions & Risk Score ━━━━━━━━━━━━━━━━━"
+report_progress 2 $TOTAL_STEPS "Analyzing permissions & risk score..."
 {
     echo "=== ANDROID PERMISSIONS ==="
     # From manifest
@@ -268,13 +283,11 @@ echo "━━━ [2/8] Permissions & Risk Score ━━━━━━━━━━━
 echo "[+] Permissions analysis saved"
 
 # ── 3. Hardcoded secrets & API keys ───────────────────
-echo ""
-echo "━━━ [3/8] Secrets & API keys ━━━━━━━━━━━━━━━━━━━━━"
+report_progress 3 $TOTAL_STEPS "Scanning secrets & API keys..."
 scan_secrets
 
 # ── 4. Crypto detection ───────────────────────────────
-echo ""
-echo "━━━ [4/8] Crypto patterns ━━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 4 $TOTAL_STEPS "Detecting crypto patterns..."
 {
     echo "=== CRYPTO USAGE ==="
 
@@ -294,8 +307,7 @@ echo "━━━ [4/8] Crypto patterns ━━━━━━━━━━━━━━
 echo "[+] Crypto analysis saved"
 
 # ── 5. Network analysis ───────────────────────────────
-echo ""
-echo "━━━ [5/8] Network patterns ━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 5 $TOTAL_STEPS "Analyzing network patterns..."
 {
     echo "=== NETWORK CONFIGURATION ==="
 
@@ -324,8 +336,7 @@ echo "━━━ [5/8] Network patterns ━━━━━━━━━━━━━�
 echo "[+] Network analysis saved"
 
 # ── 6. Sensitive data access ──────────────────────────
-echo ""
-echo "━━━ [6/8] Sensitive data access ━━━━━━━━━━━━━━━━━━━"
+report_progress 6 $TOTAL_STEPS "Checking sensitive data access..."
 {
     echo "=== SENSITIVE DATA ACCESS ==="
 
@@ -353,8 +364,7 @@ echo "━━━ [6/8] Sensitive data access ━━━━━━━━━━━━
 echo "[+] Sensitive data analysis saved"
 
 # ── 7. Native binary strings ──────────────────────────
-echo ""
-echo "━━━ [7/8] Native binary strings ━━━━━━━━━━━━━━━━━━━"
+report_progress 7 $TOTAL_STEPS "Scanning native binary strings..."
 NATIVE_DIR="${DECOMPILE_DIR}/native_libs"
 if [ -d "$NATIVE_DIR" ]; then
     {
@@ -379,8 +389,7 @@ else
 fi
 
 # ── 8. Smali dangerous patterns ───────────────────────
-echo ""
-echo "━━━ [8/8] Smali patterns ━━━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 8 $TOTAL_STEPS "Scanning smali patterns..."
 SMALI_DIR="${DECOMPILE_DIR}/apktool_smali"
 if [ -d "$SMALI_DIR" ]; then
     {
@@ -421,7 +430,8 @@ fi
 
 set -e
 
-# ── Summary ────────────────────────────────────────────
+# Clear progress line and show summary
+printf "\r%70s\r" ""
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  ANALYSIS COMPLETE                               ║"
