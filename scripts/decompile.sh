@@ -8,6 +8,21 @@ source "${SCRIPT_DIR}/../config.env"
 
 APK_FILE="${1:-}"
 OUTPUT_DIR="${2:-}"
+PROGRESS_CALLBACK="${3:-}"  # Optional: command to call for progress updates
+
+# Progress reporting function
+report_progress() {
+    local step="$1"
+    local total_steps="$2"
+    local message="$3"
+    local percent=$((step * 100 / total_steps))
+    
+    if [ -n "$PROGRESS_CALLBACK" ] && command -v "$PROGRESS_CALLBACK" >/dev/null 2>&1; then
+        $PROGRESS_CALLBACK "$percent" "$message"
+    else
+        printf "\r[%3d%%] %-50s" "$percent" "$message"
+    fi
+}
 
 if [ -z "$APK_FILE" ]; then
     echo "Usage: $(basename "$0") <apk_file> [output_dir]"
@@ -63,8 +78,10 @@ echo "[+] Size:   $(du -h "$APK_FILE" | awk '{print $1}')"
 echo "[+] Output: $OUTPUT_DIR"
 echo ""
 
+TOTAL_STEPS=6
+
 # ── 1. Metadata extraction ─────────────────────────────
-echo "━━━ [1/6] Metadata ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 1 $TOTAL_STEPS "Extracting metadata..."
 mkdir -p "$META_DIR"
 
 # Basic file info
@@ -91,8 +108,7 @@ fi
 echo "[+] Metadata saved"
 
 # ── 2. APKTool (smali + resources) ────────────────────
-echo ""
-echo "━━━ [2/6] APKTool (smali + resources) ━━━━━━━━━━━━"
+report_progress 2 $TOTAL_STEPS "Decompiling with APKTool..."
 if [ -n "$APKTOOL" ]; then
     mkdir -p "$APKTOOL_DIR"
     $APKTOOL d "$APK_FILE" -o "$APKTOOL_DIR" -f 2>&1 | tail -3 || true
@@ -106,8 +122,7 @@ else
 fi
 
 # ── 3. JADX (Java/Kotlin sources) ─────────────────────
-echo ""
-echo "━━━ [3/6] JADX (Java/Kotlin sources) ━━━━━━━━━━━━━"
+report_progress 3 $TOTAL_STEPS "Decompiling with JADX..."
 if [ -n "$JADX" ]; then
     mkdir -p "$JADX_DIR"
     jadx_flags="--deobf"
@@ -122,8 +137,7 @@ else
 fi
 
 # ── 4. dex2jar ────────────────────────────────────────
-echo ""
-echo "━━━ [4/6] dex2jar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+report_progress 4 $TOTAL_STEPS "Converting with dex2jar..."
 if [ -n "$D2J_DEX2JAR" ]; then
     mkdir -p "$DEX2JAR_DIR"
     $D2J_DEX2JAR -f -o "${DEX2JAR_DIR}/${BASENAME}.jar" "$APK_FILE" 2>&1 | tail -2 || true
@@ -133,8 +147,7 @@ else
 fi
 
 # ── 5. apk2url (URL/domain/IP extraction) ──────────────
-echo ""
-echo "━━━ [5/6] apk2url (endpoints) ━━━━━━━━━━━━━━━━━━━━"
+report_progress 5 $TOTAL_STEPS "Extracting URLs with apk2url..."
 if [ -z "$APK2URL" ] && [ "$APK2URL_MODE" = "binary" ]; then
     echo "[-] apk2url binary not found, falling back to fast extract"
     APK2URL_MODE="fast"
@@ -247,8 +260,7 @@ else
 fi
 
 # ── 6. Extract native libraries ───────────────────────
-echo ""
-echo "━━━ [6/6] Native libraries (.so) ━━━━━━━━━━━━━━━━━━"
+report_progress 6 $TOTAL_STEPS "Extracting native libraries..."
 if [ "$EXTRACT_NATIVE_LIBS" = "true" ]; then
     mkdir -p "$NATIVE_DIR"
 
@@ -281,7 +293,8 @@ if [ "$EXTRACT_NATIVE_LIBS" = "true" ]; then
     fi
 fi
 
-# ── Summary ────────────────────────────────────────────
+# Clear progress line and show summary
+printf "\r%70s\r" ""
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║  DECOMPILE COMPLETE                              ║"

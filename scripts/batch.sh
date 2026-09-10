@@ -83,7 +83,13 @@ FAIL=0
 for apk in "${APK_LIST[@]}"; do
     ((++COUNT))
     apk_name="$(basename "$apk" .apk)"
-    echo "[$COUNT/$TOTAL] Processing: $apk_name"
+    
+    # Show progress bar with percentage
+    overall_percent=$((COUNT * 100 / TOTAL))
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf "[%3d%%] [%d/%d] Processing: %s\n" "$overall_percent" "$COUNT" "$TOTAL" "$apk_name"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Check cache first
     decompile_out="${RESULTS_DIR}/${apk_name}/decompile"
@@ -127,7 +133,6 @@ for apk in "${APK_LIST[@]}"; do
         echo "  [-] Analysis failed (see log)"
         ((++FAIL))
     fi
-    echo ""
 done
 
 # ── Summary ────────────────────────────────────────────
